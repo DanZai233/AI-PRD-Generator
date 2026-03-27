@@ -1,0 +1,5 @@
+{
+  "name": "AI PRD Generator",
+  "description": "Upload application screenshots to automatically generate a detailed Product Requirements Document (PRD).",
+  "requestFramePermissions": []
+}
