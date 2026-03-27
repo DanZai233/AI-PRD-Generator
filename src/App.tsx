@@ -140,10 +140,18 @@ export default function App() {
   const renderPrd = () => {
     let processedPrd = prd;
     images.forEach((img, index) => {
-      const regex = new RegExp(`\\]\\(\\s*image_${index}(?:\\.\\w+)?\\s*\\)`, 'gi');
-      processedPrd = processedPrd.replace(regex, `](${img.dataUrl})`);
+      processedPrd = processedPrd.replace(new RegExp(`\\]\\(\\s*image_${index}(?:\\.\\w+)?\\s*\\)`, 'gi'), `](${img.dataUrl})`);
     });
     return processedPrd;
+  };
+
+  const getImageForReference = (ref: string) => {
+    const match = ref.match(/image_(\d+)/);
+    if (match) {
+      const index = parseInt(match[1], 10);
+      return images[index]?.dataUrl;
+    }
+    return null;
   };
 
   const selectedProvider = AVAILABLE_PROVIDERS.find(p => p.id === config.provider);
@@ -565,11 +573,12 @@ export default function App() {
               <Markdown
                 components={{
                   img: ({node, ...props}) => {
-                    return <img {...props} src={props.src || undefined} alt={props.alt || ''} />;
+                    const imageUrl = getImageForReference(props.src || '');
+                    return <img {...props} src={imageUrl || props.src} alt={props.alt || ''} />;
                   }
                 }}
               >
-                {renderPrd()}
+                {prd}
               </Markdown>
             </div>
           </div>
