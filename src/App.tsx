@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileImage, X, Loader2, CheckCircle2, FileText, RefreshCw, Copy } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileImage, X, Loader2, CheckCircle2, FileText, RefreshCw, Copy, Settings, Save, ChevronDown, ChevronUp } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { analyzeImage, generatePRD } from './lib/gemini';
+import { createLLMAdapter, AVAILABLE_PROVIDERS, LLMConfig } from './lib/llm';
 import { cn } from './lib/utils';
 
 interface UploadedImage {
@@ -14,6 +14,13 @@ interface UploadedImage {
 
 type AppStatus = 'idle' | 'analyzing' | 'generating' | 'done' | 'error';
 
+const DEFAULT_CONFIG: LLMConfig = {
+  provider: 'gemini',
+  apiKey: '',
+  model: 'gemini-2.5-pro-preview-03-25',
+  endpoint: '',
+};
+
 export default function App() {
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [status, setStatus] = useState<AppStatus>('idle');
@@ -21,6 +28,23 @@ export default function App() {
   const [prd, setPrd] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [config, setConfig] = useState<LLMConfig>(DEFAULT_CONFIG);
+  const [showSettings, setShowSettings] = useState(false);
+  const [configExpanded, setConfigExpanded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [customModel, setCustomModel] = useState(false);
+
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('llm-config');
+    if (savedConfig) {
+      try {
+        setConfig(JSON.parse(savedConfig));
+      } catch (e) {
+        console.error('Failed to load saved config:', e);
+      }
+    }
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -58,6 +82,15 @@ export default function App() {
     setImages(prev => prev.filter(img => img.id !== id));
   };
 
+  const saveConfig = () => {
+    setSaveStatus('saving');
+    localStorage.setItem('llm-config', JSON.stringify(config));
+    setTimeout(() => {
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    }, 500);
+  };
+
   const startGeneration = async () => {
     if (images.length === 0) return;
     
@@ -68,21 +101,20 @@ export default function App() {
     const updatedImages = [...images];
     
     try {
-      // Step 1: Analyze each image
+      const adapter = createLLMAdapter(config);
+      
       for (let i = 0; i < updatedImages.length; i++) {
         setCurrentAnalyzingIndex(i);
         const img = updatedImages[i];
-        // Extract base64 part
         const base64Data = img.dataUrl.split(',')[1];
-        const analysis = await analyzeImage(base64Data, img.mimeType);
+        const analysis = await adapter.analyzeImage(base64Data, img.mimeType);
         updatedImages[i].analysis = analysis;
-        setImages([...updatedImages]); // Update state to show progress if needed
+        setImages([...updatedImages]);
       }
 
-      // Step 2: Generate PRD
       setStatus('generating');
       const analyses = updatedImages.map(img => img.analysis || '');
-      const generatedPrd = await generatePRD(analyses);
+      const generatedPrd = await adapter.generatePRD(analyses);
       
       setPrd(generatedPrd);
       setStatus('done');
@@ -105,16 +137,16 @@ export default function App() {
     navigator.clipboard.writeText(prd);
   };
 
-  // Replace image placeholders with actual data URLs
   const renderPrd = () => {
     let processedPrd = prd;
     images.forEach((img, index) => {
-      // Replace ![...](image_X) or ![...](image_X.png) with ![...](dataUrl)
       const regex = new RegExp(`\\]\\(\\s*image_${index}(?:\\.\\w+)?\\s*\\)`, 'gi');
       processedPrd = processedPrd.replace(regex, `](${img.dataUrl})`);
     });
     return processedPrd;
   };
+
+  const selectedProvider = AVAILABLE_PROVIDERS.find(p => p.id === config.provider);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-200">
@@ -126,26 +158,290 @@ export default function App() {
             </div>
             <h1 className="text-xl font-semibold tracking-tight">AI PRD Generator</h1>
           </div>
-          {status === 'done' && (
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={copyToClipboard}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-              >
-                <Copy size={16} />
-                Copy Markdown
-              </button>
-              <button 
-                onClick={reset}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-              >
-                <RefreshCw size={16} />
-                Start Over
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {status === 'done' && (
+              <>
+                <button 
+                  onClick={copyToClipboard}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                >
+                  <Copy size={16} />
+                  Copy
+                </button>
+                <button 
+                  onClick={reset}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                >
+                  <RefreshCw size={16} />
+                  Start Over
+                </button>
+              </>
+            )}
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                showSettings ? "text-blue-600 bg-blue-50" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              )}
+            >
+              <Settings size={16} />
+              Settings
+            </button>
+          </div>
         </div>
       </header>
+
+      {showSettings && (
+        <div className="bg-white border-b border-slate-200 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="max-w-5xl mx-auto px-4 py-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">LLM Configuration</h2>
+                <button
+                  onClick={() => setConfigExpanded(!configExpanded)}
+                  className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
+                >
+                  {configExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  {configExpanded ? 'Hide Details' : 'Show Details'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+                  <select
+                    value={config.provider}
+                    onChange={(e) => {
+                      const newProvider = e.target.value;
+                      const provider = AVAILABLE_PROVIDERS.find(p => p.id === newProvider);
+                      setConfig({
+                        ...config,
+                        provider: newProvider,
+                        model: provider?.models[0] || '',
+                        endpoint: '',
+                      });
+                      setCustomModel(false);
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {AVAILABLE_PROVIDERS.map(provider => (
+                      <option key={provider.id} value={provider.id}>{provider.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                  {selectedProvider?.customModel ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={config.model || ''}
+                        onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                        placeholder="Enter model name"
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setConfig({ ...config, model: e.target.value });
+                          }
+                        }}
+                        className="w-24 px-2 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Presets</option>
+                        {selectedProvider?.models.map(model => (
+                          <option key={model} value={model}>{model.split('-').pop()}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <select
+                      value={config.model}
+                      onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {selectedProvider?.models.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+                  <input
+                    type="password"
+                    value={config.apiKey || ''}
+                    onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                    placeholder="Enter API key"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {configExpanded && (
+                <>
+                  {selectedProvider?.id === 'doubao' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://ark.cn-beijing.volces.com/api/v3"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://ark.cn-beijing.volces.com/api/v3</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'openai' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.openai.com/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.openai.com/v1</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'claude' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.anthropic.com"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.anthropic.com</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'qwen' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'ernie' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'chatglm' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://open.bigmodel.cn/api/paas/v4"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://open.bigmodel.cn/api/paas/v4</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'kimi' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.moonshot.cn/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.moonshot.cn/v1</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'deepseek' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.deepseek.com"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.deepseek.com</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'minimax' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.minimax.chat/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.minimax.chat/v1</p>
+                    </div>
+                  )}
+                  {selectedProvider?.id === 'yi' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://api.lingyiwanwu.com/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.lingyiwanwu.com/v1</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={saveConfig}
+                  disabled={saveStatus === 'saving'}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors",
+                    saveStatus === 'saved' 
+                      ? "bg-green-600 text-white" 
+                      : "bg-blue-600 hover:bg-blue-700 text-white",
+                    saveStatus === 'saving' && "opacity-70"
+                  )}
+                >
+                  {saveStatus === 'saving' ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : saveStatus === 'saved' ? (
+                    <CheckCircle2 size={16} />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  {saveStatus === 'saved' ? 'Saved!' : 'Save Configuration'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {status === 'idle' && (
