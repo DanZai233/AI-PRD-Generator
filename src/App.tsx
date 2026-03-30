@@ -317,6 +317,19 @@ export default function App() {
                       <p className="text-xs text-slate-500 mt-1">Default endpoint: https://api.openai.com/v1</p>
                     </div>
                   )}
+                  {selectedProvider?.id === 'openrouter' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>
+                      <input
+                        type="text"
+                        value={config.endpoint || ''}
+                        onChange={(e) => setConfig({ ...config, endpoint: e.target.value })}
+                        placeholder="https://openrouter.ai/api/v1"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default endpoint: https://openrouter.ai/api/v1</p>
+                    </div>
+                  )}
                   {selectedProvider?.id === 'claude' && (
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint (optional)</label>

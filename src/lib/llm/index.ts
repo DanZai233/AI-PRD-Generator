@@ -10,6 +10,7 @@ import { KimiAdapter } from "./kimi-adapter";
 import { DeepSeekAdapter } from "./deepseek-adapter";
 import { MinimaxAdapter } from "./minimax-adapter";
 import { YiAdapter } from "./yi-adapter";
+import { OpenRouterAdapter } from "./openrouter-adapter";
 
 export function createLLMAdapter(config: LLMConfig): BaseLLMAdapter {
   switch (config.provider) {
@@ -29,6 +30,12 @@ export function createLLMAdapter(config: LLMConfig): BaseLLMAdapter {
         config.apiKey || '',
         config.model || 'gpt-4o',
         config.endpoint || 'https://api.openai.com/v1'
+      );
+    case 'openrouter':
+      return new OpenRouterAdapter(
+        config.apiKey || '',
+        config.model || 'openai/gpt-4o-mini',
+        config.endpoint || 'https://openrouter.ai/api/v1'
       );
     case 'claude':
       return new ClaudeAdapter(
@@ -109,6 +116,16 @@ export const AVAILABLE_PROVIDERS = [
     requiresApiKey: true,
     supportsVision: true,
     customModel: false,
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    // OpenRouter models usually look like: "openai/gpt-4o", "anthropic/claude-3.5-sonnet", etc.
+    // Custom model input is enabled, so you can type any model name you have access to.
+    models: ['openai/gpt-4o-mini', 'openai/gpt-4o'],
+    requiresApiKey: true,
+    supportsVision: true,
+    customModel: true,
   },
   {
     id: 'claude',
