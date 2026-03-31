@@ -1,4 +1,5 @@
-import { BaseLLMAdapter } from "./types";
+import { BaseLLMAdapter, LLMResult } from "./types";
+import { parseOpenAICompatibleUsage } from "./token-usage";
 
 export class MinimaxAdapter implements BaseLLMAdapter {
   private apiKey: string;
@@ -13,7 +14,7 @@ export class MinimaxAdapter implements BaseLLMAdapter {
     this.groupId = apiKey.split('_')[0] || '';
   }
 
-  private async callAPI(messages: any[]): Promise<string> {
+  private async callAPI(messages: any[]): Promise<LLMResult> {
     const response = await fetch(`${this.endpoint}/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
@@ -33,10 +34,13 @@ export class MinimaxAdapter implements BaseLLMAdapter {
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.messages?.[0]?.text || "";
+    return {
+      text: data.choices?.[0]?.messages?.[0]?.text || "",
+      usage: parseOpenAICompatibleUsage(data),
+    };
   }
 
-  async analyzeImage(base64Data: string, mimeType: string): Promise<string> {
+  async analyzeImage(base64Data: string, mimeType: string): Promise<LLMResult> {
     const messages = [
       {
         sender_type: "USER",
@@ -49,7 +53,7 @@ export class MinimaxAdapter implements BaseLLMAdapter {
     return await this.callAPI(messages);
   }
 
-  async generatePRD(analyses: string[]): Promise<string> {
+  async generatePRD(analyses: string[]): Promise<LLMResult> {
     const prompt = `我已经分析了一个应用的多张截图。以下是每张截图的详细分析：
 
 ${analyses.map((a, i) => `--- 截图 ${i} 分析 ---\n${a}\n`).join('\n')}

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
-import { BaseLLMAdapter } from "./types";
+import { BaseLLMAdapter, LLMResult } from "./types";
+import { parseGeminiUsageMetadata } from "./token-usage";
 
 export class GeminiAdapter implements BaseLLMAdapter {
   private apiKey: string;
@@ -14,7 +15,7 @@ export class GeminiAdapter implements BaseLLMAdapter {
     return new GoogleGenAI({ apiKey: this.apiKey });
   }
 
-  async analyzeImage(base64Data: string, mimeType: string): Promise<string> {
+  async analyzeImage(base64Data: string, mimeType: string): Promise<LLMResult> {
     const ai = this.getAI();
     const response = await ai.models.generateContent({
       model: this.model,
@@ -32,10 +33,13 @@ export class GeminiAdapter implements BaseLLMAdapter {
         ],
       },
     });
-    return response.text || "";
+    return {
+      text: response.text || "",
+      usage: parseGeminiUsageMetadata(response.usageMetadata),
+    };
   }
 
-  async generatePRD(analyses: string[]): Promise<string> {
+  async generatePRD(analyses: string[]): Promise<LLMResult> {
     const ai = this.getAI();
     const prompt = `我已经分析了一个应用的多张截图。以下是每张截图的详细分析：
 
@@ -55,6 +59,9 @@ ${analyses.map((a, i) => `--- 截图 ${i} 分析 ---\n${a}\n`).join('\n')}
       model: this.model,
       contents: prompt,
     });
-    return response.text || "";
+    return {
+      text: response.text || "",
+      usage: parseGeminiUsageMetadata(response.usageMetadata),
+    };
   }
 }

@@ -90,7 +90,14 @@ export function createLLMAdapter(config: LLMConfig): BaseLLMAdapter {
   }
 }
 
-export type { LLMConfig, BaseLLMAdapter } from "./types";
+export type { LLMConfig, BaseLLMAdapter, TokenUsage, LLMResult } from "./types";
+export type { CumulativeTokenStats } from "./token-usage";
+export {
+  sumTokenUsages,
+  loadCumulativeTokenStats,
+  addRunToCumulativeStats,
+  clearCumulativeTokenStats,
+} from "./token-usage";
 
 export const AVAILABLE_PROVIDERS = [
   {

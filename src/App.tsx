@@ -1,7 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileImage, X, Loader2, CheckCircle2, FileText, RefreshCw, Copy, Settings, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, X, Loader2, CheckCircle2, FileText, RefreshCw, Copy, Settings, Save, ChevronDown, ChevronUp, Coins } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { createLLMAdapter, AVAILABLE_PROVIDERS, LLMConfig } from './lib/llm';
+import {
+  createLLMAdapter,
+  AVAILABLE_PROVIDERS,
+  LLMConfig,
+  TokenUsage,
+  CumulativeTokenStats,
+  sumTokenUsages,
+  loadCumulativeTokenStats,
+  addRunToCumulativeStats,
+  clearCumulativeTokenStats,
+} from './lib/llm';
 import { cn } from './lib/utils';
 
 interface UploadedImage {
@@ -34,6 +44,10 @@ export default function App() {
   const [configExpanded, setConfigExpanded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [customModel, setCustomModel] = useState(false);
+  const [tokenUsageThisRun, setTokenUsageThisRun] = useState<TokenUsage | null>(null);
+  const [cumulativeTokenStats, setCumulativeTokenStats] = useState<CumulativeTokenStats>(() =>
+    loadCumulativeTokenStats()
+  );
 
   useEffect(() => {
     const savedConfig = localStorage.getItem('llm-config');
@@ -97,8 +111,10 @@ export default function App() {
     setStatus('analyzing');
     setError('');
     setPrd('');
+    setTokenUsageThisRun(null);
     
     const updatedImages = [...images];
+    const usageParts: (TokenUsage | undefined)[] = [];
     
     try {
       const adapter = createLLMAdapter(config);
@@ -107,16 +123,23 @@ export default function App() {
         setCurrentAnalyzingIndex(i);
         const img = updatedImages[i];
         const base64Data = img.dataUrl.split(',')[1];
-        const analysis = await adapter.analyzeImage(base64Data, img.mimeType);
-        updatedImages[i].analysis = analysis;
+        const out = await adapter.analyzeImage(base64Data, img.mimeType);
+        usageParts.push(out.usage);
+        updatedImages[i].analysis = out.text;
         setImages([...updatedImages]);
       }
 
       setStatus('generating');
       const analyses = updatedImages.map(img => img.analysis || '');
-      const generatedPrd = await adapter.generatePRD(analyses);
+      const prdOut = await adapter.generatePRD(analyses);
+      usageParts.push(prdOut.usage);
       
-      setPrd(generatedPrd);
+      setPrd(prdOut.text);
+      const summed = sumTokenUsages(usageParts);
+      setTokenUsageThisRun(summed);
+      if (summed) {
+        setCumulativeTokenStats(addRunToCumulativeStats(summed));
+      }
       setStatus('done');
     } catch (err: any) {
       console.error('Error generating PRD:', err);
@@ -131,7 +154,11 @@ export default function App() {
     setPrd('');
     setError('');
     setCurrentAnalyzingIndex(0);
+    setTokenUsageThisRun(null);
   };
+
+  const formatTokenCount = (n: number | undefined) =>
+    n == null || Number.isNaN(n) ? '—' : n.toLocaleString();
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(prd);
@@ -582,6 +609,38 @@ export default function App() {
 
         {status === 'done' && (
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 md:px-8">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <Coins size={18} className="text-amber-600 shrink-0" />
+                  Token 消耗
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+                  <span>
+                    本次 · 输入 <span className="font-medium text-slate-900 tabular-nums">{formatTokenCount(tokenUsageThisRun?.promptTokens)}</span>
+                    {' · '}输出 <span className="font-medium text-slate-900 tabular-nums">{formatTokenCount(tokenUsageThisRun?.completionTokens)}</span>
+                    {' · '}合计 <span className="font-medium text-slate-900 tabular-nums">{formatTokenCount(tokenUsageThisRun?.totalTokens)}</span>
+                  </span>
+                  {!tokenUsageThisRun && (
+                    <span className="text-slate-500">（本次请求未返回用量，部分供应商或模型可能不提供）</span>
+                  )}
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span>
+                  累计（本机）· 输入 {formatTokenCount(cumulativeTokenStats.promptTokens)} · 输出{' '}
+                  {formatTokenCount(cumulativeTokenStats.completionTokens)} · 合计{' '}
+                  {formatTokenCount(cumulativeTokenStats.totalTokens)} · 生成次数 {cumulativeTokenStats.runs}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCumulativeTokenStats(clearCumulativeTokenStats())}
+                  className="shrink-0 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                >
+                  清空累计
+                </button>
+              </div>
+            </div>
             <div className="p-8 md:p-12 prose prose-slate prose-blue max-w-none prose-img:rounded-xl prose-img:border prose-img:border-slate-200 prose-img:shadow-sm prose-headings:tracking-tight">
               <Markdown
                 components={{

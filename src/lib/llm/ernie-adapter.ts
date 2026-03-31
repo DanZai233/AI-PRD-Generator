@@ -1,4 +1,5 @@
-import { BaseLLMAdapter } from "./types";
+import { BaseLLMAdapter, LLMResult } from "./types";
+import { parseOpenAICompatibleUsage } from "./token-usage";
 
 export class ErnieAdapter implements BaseLLMAdapter {
   private apiKey: string;
@@ -23,7 +24,7 @@ export class ErnieAdapter implements BaseLLMAdapter {
     return data.access_token;
   }
 
-  private async callAPI(messages: any[]): Promise<string> {
+  private async callAPI(messages: any[]): Promise<LLMResult> {
     const accessToken = await this.getAccessToken();
     const url = `${this.endpoint}/${this.model}?access_token=${accessToken}`;
     
@@ -43,10 +44,13 @@ export class ErnieAdapter implements BaseLLMAdapter {
     }
 
     const data = await response.json();
-    return data.result || "";
+    return {
+      text: data.result || "",
+      usage: parseOpenAICompatibleUsage(data),
+    };
   }
 
-  async analyzeImage(base64Data: string, mimeType: string): Promise<string> {
+  async analyzeImage(base64Data: string, mimeType: string): Promise<LLMResult> {
     const messages = [
       {
         role: "user",
@@ -66,7 +70,7 @@ export class ErnieAdapter implements BaseLLMAdapter {
     return await this.callAPI(messages);
   }
 
-  async generatePRD(analyses: string[]): Promise<string> {
+  async generatePRD(analyses: string[]): Promise<LLMResult> {
     const prompt = `我已经分析了一个应用的多张截图。以下是每张截图的详细分析：
 
 ${analyses.map((a, i) => `--- 截图 ${i} 分析 ---\n${a}\n`).join('\n')}

@@ -1,4 +1,5 @@
-import { BaseLLMAdapter } from "./types";
+import { BaseLLMAdapter, LLMResult } from "./types";
+import { parseOpenAICompatibleUsage } from "./token-usage";
 
 export class QwenAdapter implements BaseLLMAdapter {
   private apiKey: string;
@@ -11,7 +12,7 @@ export class QwenAdapter implements BaseLLMAdapter {
     this.endpoint = endpoint;
   }
 
-  private async callAPI(messages: any[]): Promise<string> {
+  private async callAPI(messages: any[]): Promise<LLMResult> {
     const response = await fetch(`${this.endpoint}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -30,10 +31,13 @@ export class QwenAdapter implements BaseLLMAdapter {
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || "";
+    return {
+      text: data.choices[0]?.message?.content || "",
+      usage: parseOpenAICompatibleUsage(data),
+    };
   }
 
-  async analyzeImage(base64Data: string, mimeType: string): Promise<string> {
+  async analyzeImage(base64Data: string, mimeType: string): Promise<LLMResult> {
     const messages = [
       {
         role: "user",
@@ -55,7 +59,7 @@ export class QwenAdapter implements BaseLLMAdapter {
     return await this.callAPI(messages);
   }
 
-  async generatePRD(analyses: string[]): Promise<string> {
+  async generatePRD(analyses: string[]): Promise<LLMResult> {
     const prompt = `我已经分析了一个应用的多张截图。以下是每张截图的详细分析：
 
 ${analyses.map((a, i) => `--- 截图 ${i} 分析 ---\n${a}\n`).join('\n')}
